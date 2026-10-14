@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Draw Along</title>
+<style>
+  body{margin:0;font-family:"Comic Sans MS","Chalkboard SE",system-ui,sans-serif;background:#fff8e7;color:#333}
+  header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;background:#ffd56b}
+  button,select{font-family:inherit;font-size:20px;border:none;border-radius:14px;padding:10px 14px;background:#fff;box-shadow:0 3px 0 #c9a13b;cursor:pointer}
+  button:active{transform:translateY(2px);box-shadow:none}
+  button.on{background:#7bd389}
+  .colors{display:flex;gap:6px}
+  .colors button{width:44px;height:44px;padding:0;border-radius:50%;border:3px solid #fff;box-shadow:0 2px 0 #999}
+  .colors button.on{outline:4px solid #333}
+  main{display:flex;flex-wrap:wrap;gap:12px;padding:12px}
+  #guide{flex:1 1 300px;background:#fff;border-radius:16px;padding:12px}
+  #paper{flex:2 1 400px;background:#fff;border-radius:16px;padding:8px}
+  canvas{width:100%;height:auto;display:block;touch-action:none;border-radius:10px;background:#fff}
+  #ref svg{width:100%;height:auto;background:#fffdf7;border-radius:10px}
+  .s-old{fill:none;stroke:#cfcfcf;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+  .s-cur{fill:none;stroke:#ff7a00;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+  .steps label{display:flex;gap:10px;align-items:center;font-size:21px;padding:8px;border-radius:12px;cursor:pointer}
+  .steps label.cur{background:#fff0d6;font-weight:bold}
+  .steps label.done span{text-decoration:line-through;color:#8a8a8a}
+  .steps input{width:28px;height:28px;accent-color:#43a047}
+  #cheer{font-size:26px;text-align:center;margin-top:10px;min-height:34px}
+</style>
+</head>
+<body>
+<header>
+  <select id="pick"></select>
+  <div class="colors" id="colors"></div>
+  <button data-size="4">•</button>
+  <button data-size="10" class="on">●</button>
+  <button data-size="24">⬤</button>
+  <button id="erase">🧽 Eraser</button>
+  <button id="clear">🗑 Clear</button>
+  <button id="save">💾 Save</button>
+</header>
+<main>
+  <section id="guide">
+    <div id="ref"></div>
+    <div class="steps" id="steps"></div>
+    <div id="cheer"></div>
+  </section>
+  <section id="paper"><canvas id="cv" width="800" height="800"></canvas></section>
+</main>
+
+<script>
+// ---------- Guided designs ----------
+// Each step has a sentence to read and SVG shapes (viewBox 0 0 300 300) for the reference picture.
+const DESIGNS = {
+  cat: {
+    name: "Cat",
+    steps: [
+      { t: "Draw a big circle for the head", s: '<circle cx="150" cy="160" r="90"/>' },
+      { t: "Add two pointy ears on top", s: '<polygon points="75,95 85,20 135,75"/><polygon points="225,95 215,20 165,75"/>' },
+      { t: "Draw two round eyes", s: '<circle cx="115" cy="150" r="12"/><circle cx="185" cy="150" r="12"/>' },
+      { t: "Draw a small triangle nose", s: '<polygon points="140,180 160,180 150,194"/>' },
+      { t: "Draw the mouth and whiskers", s: '<path d="M150 194 Q135 212 120 202 M150 194 Q165 212 180 202 M30 170 L100 180 M30 200 L100 195 M270 170 L200 180 M270 200 L200 195"/>' }
+    ]
+  },
+  house: {
+    name: "House",
+    steps: [
+      { t: "Draw a big square for the walls", s: '<rect x="60" y="130" width="180" height="130"/>' },
+      { t: "Draw a triangle roof on top", s: '<polygon points="40,135 150,40 260,135"/>' },
+      { t: "Draw a tall door in the middle", s: '<rect x="130" y="190" width="40" height="70"/>' },
+      { t: "Add two square windows", s: '<rect x="75" y="150" width="40" height="40"/><rect x="185" y="150" width="40" height="40"/>' },
+      { t: "Draw a sun in the corner", s: '<circle cx="255" cy="45" r="22"/><path d="M255 10 L255 0 M255 80 L255 92 M220 45 L208 45 M290 45 L302 45"/>' }
+    ]
+  },
+  fish: {
+    name: "Fish",
+    steps: [
+      { t: "Draw a big oval for the body", s: '<ellipse cx="130" cy="150" rx="90" ry="55"/>' },
+      { t: "Draw a triangle tail on the right", s: '<polygon points="215,150 280,100 280,200"/>' },
+      { t: "Draw a round eye", s: '<circle cx="90" cy="135" r="10"/>' },
+      { t: "Draw the fins on top and bottom", s: '<path d="M120 98 Q135 60 160 98 M120 205 Q135 240 160 205"/>' },
+      { t: "Add bubbles floating up", s: '<circle cx="50" cy="60" r="10"/><circle cx="30" cy="30" r="6"/><circle cx="70" cy="25" r="8"/>' }
+    ]
+  },
+  rocket: {
+    name: "Rocket",
+    steps: [
+      { t: "Draw a tall rounded body", s: '<path d="M150 20 Q200 80 200 180 L100 180 Q100 80 150 20 Z"/>' },
+      { t: "Draw a round window", s: '<circle cx="150" cy="110" r="20"/>' },
+      { t: "Add two fins on the sides", s: '<polygon points="100,160 70,205 100,195"/><polygon points="200,160 230,205 200,195"/>' },
+      { t: "Draw the fire shooting down", s: '<path d="M125 180 Q150 260 175 180"/>' },
+      { t: "Add stars around the rocket", s: '<path d="M250 40 L255 55 L270 55 L258 64 L263 79 L250 70 L237 79 L242 64 L230 55 L245 55 Z"/><circle cx="40" cy="80" r="4"/><circle cx="60" cy="240" r="4"/>' }
+    ]
+  },
+  tree: {
+    name: "Tree",
+    steps: [
+      { t: "Draw a tall brown trunk", s: '<rect x="135" y="170" width="30" height="110"/>' },
+      { t: "Draw a big round treetop", s: '<circle cx="150" cy="120" r="70"/>' },
+      { t: "Draw the ground line", s: '<path d="M40 280 L260 280"/>' },
+      { t: "Add apples or leaves", s: '<circle cx="120" cy="110" r="8"/><circle cx="175" cy="135" r="8"/><circle cx="150" cy="85" r="8"/>' },
+      { t: "Draw a sun in the corner", s: '<circle cx="255" cy="45" r="22"/><path d="M255 10 L255 0 M255 80 L255 92 M220 45 L208 45 M290 45 L302 45"/>' }
+    ]
+  },
+  dog: {
+    name: "Dog",
+    steps: [
+      { t: "Draw a big oval for the body", s: '<ellipse cx="150" cy="180" rx="80" ry="55"/>' },
+      { t: "Draw a round head on the left", s: '<circle cx="80" cy="120" r="50"/>' },
+      { t: "Add floppy ears on the head", s: '<ellipse cx="50" cy="130" rx="18" ry="35"/><ellipse cx="110" cy="100" rx="16" ry="30"/>' },
+      { t: "Draw four legs under the body", s: '<path d="M105 230 L105 275 M130 230 L130 275 M175 230 L175 275 M200 230 L200 275"/>' },
+      { t: "Add a wagging tail and a nose", s: '<path d="M230 165 Q270 130 260 100"/><circle cx="50" cy="120" r="6"/>' }
+    ]
+  },
+  car: {
+    name: "Car",
+    steps: [
+      { t: "Draw a long box for the bottom", s: '<rect x="30" y="150" width="240" height="70" rx="10"/>' },
+      { t: "Draw the roof on top", s: '<path d="M75 150 L105 95 L195 95 L225 150"/>' },
+      { t: "Add two big round wheels", s: '<circle cx="85" cy="225" r="30"/><circle cx="215" cy="225" r="30"/>' },
+      { t: "Draw two windows", s: '<rect x="95" y="105" width="40" height="38"/><rect x="150" y="105" width="40" height="38"/>' },
+      { t: "Add headlights and a smile", s: '<circle cx="265" cy="170" r="8"/><path d="M50 190 L30 190"/>' }
+    ]
+  },
+  flower: {
+    name: "Flower",
+    steps: [
+      { t: "Draw a circle for the center", s: '<circle cx="150" cy="110" r="25"/>' },
+      { t: "Add the top petal", s: '<ellipse cx="150" cy="55" rx="22" ry="35"/>' },
+      { t: "Add petals on the left and right", s: '<ellipse cx="95" cy="110" rx="35" ry="22"/><ellipse cx="205" cy="110" rx="35" ry="22"/>' },
+      { t: "Draw a long stem going down", s: '<path d="M150 135 L150 280"/>' },
+      { t: "Add two leaves on the stem", s: '<path d="M150 230 Q120 200 110 220 Q130 240 150 230 M150 250 Q180 220 190 240 Q170 260 150 250"/>' }
+    ]
+  },
+  dinosaur: {
+    name: "Dinosaur",
+    steps: [
+      { t: "Draw a big oval for the body", s: '<ellipse cx="150" cy="180" rx="90" ry="50"/>' },
+      { t: "Draw a long neck and head", s: '<path d="M200 150 Q215 90 240 70 Q262 70 265 90 Q250 110 225 150"/>' },
+      { t: "Draw two strong legs", s: '<path d="M110 220 L110 275 M170 220 L170 275"/>' },
+      { t: "Draw a long tail", s: '<path d="M60 170 Q20 170 15 220 Q35 200 60 200"/>' },
+      { t: "Add spiky bumps on the back", s: '<path d="M100 130 L110 110 L120 130 M130 127 L140 107 L150 127 M160 130 L170 110 L180 130"/>' }
+    ]
+  },
+  icecream: {
+    name: "Ice Cream",
+    steps: [
+      { t: "Draw a triangle cone pointing down", s: '<polygon points="105,160 195,160 150,275"/>' },
+      { t: "Draw a big circle scoop on top", s: '<circle cx="150" cy="120" r="50"/>' },
+      { t: "Add a second scoop on the side", s: '<circle cx="110" cy="150" r="30"/>' },
+      { t: "Draw a cherry on the very top", s: '<circle cx="150" cy="62" r="12"/><path d="M150 50 Q160 30 175 28"/>' },
+      { t: "Add waffle lines on the cone", s: '<path d="M120 185 L180 245 M180 185 L120 245 M125 215 L175 215"/>' }
+    ]
+  }
+};
+
+// ---------- State ----------
+let designKey = "cat";
+let checked = [];
+
+const COLORS = ["#222222", "#e53935", "#fb8c00", "#fdd835", "#43a047", "#1e88e5", "#8e24aa", "#8d6e63"];
+const pick = document.getElementById("pick");
+const stepsEl = document.getElementById("steps");
+const refEl = document.getElementById("ref");
+const cheerEl = document.getElementById("cheer");
+
+for (const k in DESIGNS) {
+  const o = document.createElement("option");
+  o.value = k; o.textContent = DESIGNS[k].name;
+  pick.appendChild(o);
+}
+pick.addEventListener("change", () => { designKey = pick.value; checked = []; renderGuide(); });
+
+// ---------- Guide rendering ----------
+function currentIndex(d) {
+  const i = d.steps.findIndex((_, idx) => !checked[idx]);
+  return i === -1 ? d.steps.length : i;
+}
+
+function renderGuide() {
+  const d = DESIGNS[designKey];
+  const cur = currentIndex(d);
+
+  // Reference picture: finished steps in gray, current step in orange, future steps hidden
+  let svg = '<svg viewBox="0 0 300 300">';
+  d.steps.forEach((st, i) => {
+    if (i > cur) return;
+    svg += `<g class="${i < cur ? "s-old" : "s-cur"}">${st.s}</g>`;
+  });
+  svg += "</svg>";
+  refEl.innerHTML = svg;
+
+  // Step checklist
+  stepsEl.innerHTML = "";
+  d.steps.forEach((st, i) => {
+    const label = document.createElement("label");
+    label.className = (checked[i] ? "done" : "") + (i === cur ? " cur" : "");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !!checked[i];
+    box.addEventListener("change", () => { checked[i] = box.checked; renderGuide(); });
+    const span = document.createElement("span");
+    span.textContent = (i + 1) + ". " + st.t;
+    label.append(box, span);
+    stepsEl.appendChild(label);
+  });
+
+  // Cheer when finished
+  const done = checked.filter(Boolean).length;
+  if (cur === d.steps.length) {
+    cheerEl.textContent = "⭐ You drew a " + d.name.toLowerCase() + "! ⭐";
+  } else {
+    cheerEl.textContent = "⭐".repeat(done);
+  }
+}
+
+// ---------- Drawing ----------
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+ctx.lineCap = "round";
+ctx.lineJoin = "round";
+
+let color = COLORS[0];
+let size = 10;
+let erasing = false;
+let drawing = false;
+let last = null;
+
+function pos(e) {
+  const r = cv.getBoundingClientRect();
+  return {
+    x: (e.clientX - r.left) * (cv.width / r.width),
+    y: (e.clientY - r.top) * (cv.height / r.height)
+  };
+}
+
+cv.addEventListener("pointerdown", e => {
+  drawing = true;
+  cv.setPointerCapture(e.pointerId);
+  last = pos(e);
+  ctx.fillStyle = erasing ? "#ffffff" : color;
+  ctx.beginPath();
+  ctx.arc(last.x, last.y, (erasing ? size * 3 : size) / 2, 0, Math.PI * 2);
+  ctx.fill();
+});
+
+cv.addEventListener("pointermove", e => {
+  if (!drawing) return;
+  const p = pos(e);
+  ctx.strokeStyle = erasing ? "#ffffff" : color;
+  ctx.lineWidth = erasing ? size * 3 : size;
+  ctx.beginPath();
+  ctx.moveTo(last.x, last.y);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+  last = p;
+});
+
+["pointerup", "pointercancel", "pointerleave"].forEach(ev =>
+  cv.addEventListener(ev, () => { drawing = false; })
+);
+
+// Colors
+const colorsEl = document.getElementById("colors");
+COLORS.forEach((c, i) => {
+  const b = document.createElement("button");
+  b.style.background = c;
+  if (i === 0) b.classList.add("on");
+  b.addEventListener("click", () => {
+    color = c;
+    erasing = false;
+    document.getElementById("erase").classList.remove("on");
+    colorsEl.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+  });
+  colorsEl.appendChild(b);
+});
+
+// Brush sizes
+document.querySelectorAll("[data-size]").forEach(b => {
+  b.addEventListener("click", () => {
+    size = Number(b.dataset.size);
+    document.querySelectorAll("[data-size]").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+  });
+});
+
+// Eraser
+document.getElementById("erase").addEventListener("click", e => {
+  erasing = !erasing;
+  e.currentTarget.classList.toggle("on", erasing);
+});
+
+// Clear (asks first so an accidental tap doesn't wipe the drawing)
+document.getElementById("clear").addEventListener("click", () => {
+  if (confirm("Clear the whole drawing?")) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+  }
+});
+
+// Save as PNG
+document.getElementById("save").addEventListener("click", () => {
+  const a = document.createElement("a");
+  a.download = DESIGNS[designKey].name.toLowerCase() + "-drawing.png";
+  a.href = cv.toDataURL("image/png");
+  a.click();
+});
+
+// Start with a white page
+ctx.fillStyle = "#ffffff";
+ctx.fillRect(0, 0, cv.width, cv.height);
+renderGuide();
+</script>
+</body>
+</html>
